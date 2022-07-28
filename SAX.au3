@@ -7,7 +7,7 @@
 ; Description ...: provide structures to parse a xml string event-driven according to the SAX-standard
 ; Author(s) .....: AspirinJunkie
 ; Last changed ..: 2022-07-27
-; Link ..........: existiert noch nicht
+; Link ..........: https://autoit.de/thread/87771-sax-xml-parser-anderer-parsing-ansatz-f%C3%BCr-die-behandlung-von-xml-daten/
 ; ===============================================================================================================================
 
 
@@ -16,56 +16,56 @@
 ; Description ...: parse xml strings according to the SAX standard; SAX is event-driven and operate on each piece of the XML document sequentially
 ; Syntax ........: _xml_SAXParse($sXML[, $cbStartElement = Default[, $cbEndElement = Default[, $cbCharacters = Default[, $cbXMLDefinition = Default[, $cbCDATA = Default[, $dFlags = 1]]]]]])
 ; Parameters ....: $sXML            - the input xml string
+;                  $dFlags          - [optional] bit mask with following options: (default:1)
+;                  		1: whitespace only content is beeing ignored
+;                  		2: comments get removed before parsing
 ;                  $cbStartElement  - [optional] callback function for handling xml open-tags with 5 parameters: (default:Default)
-;                  |1st element name
-;                  |2nd element attributes as a autoit map [Key-Value]
-;                  |3rd start offset in the in the source xml string
-;                  |4th string len of open tag in the source xml string
-;                  |5th boolean value indicating if element is a self-closing element
+;                  		1st element name
+;                  		2nd element attributes as a autoit map [Key-Value]
+;                  		3rd start offset in the in the source xml string
+;                  		4th string len of open tag in the source xml string
+;                  		5th boolean value indicating if element is a self-closing element
 ;                  $cbEndElement    - [optional] callback function for handling xml closing-tags with 3 parameters: (default:Default)
-;                  |1st: element name
-;                  |2nd: start offset in the in the source xml string
-;                  |3rd: string len of open tag in the source xml string
+;                  		1st: element name
+;                  		2nd: start offset in the in the source xml string
+;                  		3rd: string len of open tag in the source xml string
 ;                  $cbCharacters    - [optional] callback function for handling xml element content with 3 parameters: (see dFlags for handling whitespaces) (default:Default)
-;                  |1st: content as string
-;                  |2nd: start offset in the in the source xml string
-;                  |3rd: string len of open tag in the source xml string
+;                  		1st: content as string
+;                  		2nd: start offset in the in the source xml string
+;                  		3rd: string len of open tag in the source xml string
 ;                  $cbXMLDefinition - [optional] callback function for handling xml definition elements with 3 parameters (default:Default)
 ;                  $cbCDATA         - [optional] callback function for handling CDATA elements with 3 parameters (default:Default)
-;                  $dFlags          - [optional] bit mask with following options: (default:1)
-;                  |1: whitespace only content is beeing ignored
-;                  |2: comments get removed before parsing
 ; Return values .: Success: True
 ;                  Failure: False and set @error to:
-;                  |@error = 1: error during parsing element start
-;                  |@error = 2: error during parsing element end
-;                  |@error = 3: report worthy error - should actually not occur
+;                  		@error = 1: error during parsing element start
+;                  		@error = 2: error during parsing element end
+;                  		@error = 3: report worthy error - should actually not occur
 ; Author ........: AspirinJunkie
 ; Modified ......: 2022-07-27
 ; =================================================================================================
-Func _xml_SAXParse(ByRef $sXML, $cbStartElement = Default, $cbEndElement = Default, $cbCharacters = Default, $cbXMLDefinition = Default, $cbCDATA = Default, $dFlags = 1)
-	Local $iPos = 1, $iPosBefore, $sMatch
+Func _xml_SAXParse(ByRef $sXML, $dFlags = 3, $cbStartElement = Default, $cbEndElement = Default, $cbCharacters = Default, $cbXMLDefinition = Default, $cbCDATA = Default, $cbSpecial = Default, $sIgnoredElements = "script|style")
+	Local $iPos = 1, $iPosBefore, $sMatch, $sBeginChars
 	Local $sElName, $aAttributes, $sAttrib, $aSplit
 
 	Local Const $sRE = '(?x)' & _
-						'(?(DEFINE)' & _
-						'   (?<WS> [\x20\x{9}\x{D}\x{A}] )' & _
-						'   (?<Char> [\x{9}\x{A}\x{D}\x20-\x{D7FF}\x{E000}-\x{FFFD}] )' & _
-						'   (?<NameStartChar> [:A-Z_a-z\xC0-\xD6\xD8-\xF6\xF8-\x{2FF}\x{370}-\x{37D}\x{37F}-\x{1FFF}\x{200C}-\x{200D}\x{2070}-\x{218F}\x{2C00}-\x{2FEF}\x{3001}-\x{D7FF}\x{F900}-\x{FDCF}\x{FDF0}-\x{FFFD}] )' & _
-						'   (?<NameChar> (?:\g<NameStartChar>|[-\.0-9\xB7\x{0300}-\x{036F}\x{203F}-\x{2040}]) )' & _
-						'   (?<Name> \g<NameStartChar>\g<NameChar>* )' & _
-						'   (?<EntityRef> (?:\&\g<Name>;) )' & _
-						'   (?<PEReference> (?:\%\g<Name>;) )' & _
-						'   (?<Reference> (?:\g<EntityRef>|\g<PEReference>) )' & _
-						'   (?<AttValue> (?:\"(?:[^<&\"]|\g<Reference>)*\"|\''(?:[^<&'']|\g<Reference>)*\'') )' & _
-						'   (?<AttPlusValue> \g<WS>*(?:["'']?(\g<Name>)["'']?\g<WS>*(?:=\g<WS>*(\g<AttValue>))*) )' & _
-						'   (?<ElementBegin> <\g<Name>\g<AttPlusValue>*\/?> )' & _
-						'   (?<ElementEnd> <\/\g<Name>?> )' & _
-						'   (?<Comment> (?sm)<!--((?!--)\g<Char>)*--> )' & _
-						'   (?<ScriptElement> (?sm)(?:<(?>script|style)\b.+?)(?R)?(?:<\/(?>script|style)>) )' & _
-						'   (?<NonParsingElement> (?sm)(?:<!\[CDATA\[.+?)(?R)?(?:\]\]>) )' & _
-						'   (?<XMLDefinition> (?sm)<[!?]\g<Name>[^>]*> )' & _
-						')' ; https://regex101.com/r/CGQVZg/4
+			'(?(DEFINE)' & _
+			'   (?<WS> [\x20\x{9}\x{D}\x{A}] )' & _
+			'   (?<Char> [\x{9}\x{A}\x{D}\x20-\x{D7FF}\x{E000}-\x{FFFD}] )' & _
+			'   (?<NameStartChar> [:A-Z_a-z\xC0-\xD6\xD8-\xF6\xF8-\x{2FF}\x{370}-\x{37D}\x{37F}-\x{1FFF}\x{200C}-\x{200D}\x{2070}-\x{218F}\x{2C00}-\x{2FEF}\x{3001}-\x{D7FF}\x{F900}-\x{FDCF}\x{FDF0}-\x{FFFD}] )' & _
+			'   (?<NameChar> (?>\g<NameStartChar>|[-\.0-9\xB7\x{0300}-\x{036F}\x{203F}-\x{2040}]) )' & _
+			'   (?<Name> \g<NameStartChar>\g<NameChar>*+ )' & _
+			'   (?<EntityRef> (?>\&\g<Name>;) )' & _
+			'   (?<PEReference> (?>\%\g<Name>;) )' & _
+			'   (?<Reference> (?>\g<EntityRef>|\g<PEReference>) )' & _
+			'   (?<AttValue> (?>\"[^<\"]*+\"|\''[^<'']*+\'') )' & _
+			'   (?<AttPlusValue> \g<WS>*+(?>["'''']?(\g<Name>)["'''']?\g<WS>*+(?>=\g<WS>*(\g<AttValue>))*+) )' & _
+			'   (?<ElementBegin> \<\g<Name>[^>]*+\/?\> )' & _
+			'   (?<ElementEnd> \<\/\g<Name>?\g<WS>*+\> )' & _
+			'   (?<Comment> (?s)<!--((?!--)\g<Char>)*+--> )' & _
+			'   (?<ScriptElement> (?s)<(?>script|style)\b.+?<\/(?>script|style)> )' & _
+			'   (?<NonParsingElement> (?s)<!\[CDATA\[.+?\]\]> )' & _
+			'   (?<XMLDefinition> (?s)<[!?]\g<Name>[^>]*+> )' & _
+			')'             ; https://regex101.com/r/CGQVZg/8
 
 	;  remove comments:
 	If BitAND($dFlags, 2) Then $sXML = StringRegExpReplace($sXML, $sRE & "(?P>Comment)", "")
@@ -74,62 +74,76 @@ Func _xml_SAXParse(ByRef $sXML, $cbStartElement = Default, $cbEndElement = Defau
 	Local $iXMLLength = StringLen($sXML)
 
 	Do
-		;  XML definition elements like '<?xml version="1.0"?>' or '<!DOCTYPE ...>' and other non content elements
-		If __matchAndBool($sMatch, $sXML, $sRE & '\G(?P>XMLDefinition)', $iPos) Then
-			$iPosBefore = $iPos
-			$iPos = @extended
+		; prefiltering for performance-reasons
+		$sBeginChars = StringMid($sXML, $iPos, 2)
+		If StringLeft($sBeginChars, 1) = "<" Then
 
-			If IsKeyword($cbXMLDefinition) <> 1 Then $cbXMLDefinition($sMatch, $iPosBefore, $iPos - $iPosBefore)
+			;  XML definition elements like '<?xml version="1.0"?>' or '<!DOCTYPE ...>' and other non content elements
+			If StringInStr("?!", StringRight($sBeginChars, 1), 1) Then
+				If __matchAndBool($sMatch, $sXML, $sRE & '\G(?P>XMLDefinition)', $iPos) Then
+					$iPosBefore = $iPos
+					$iPos = @extended
 
-		; Elements which should not be parsed (CDATA)
-		ElseIf __matchAndBool($sMatch, $sXML, $sRE & '\G(?P>NonParsingElement)', $iPos) Then
-			$iPosBefore = $iPos
-			$iPos = @extended
+					If IsKeyword($cbXMLDefinition) <> 1 Then $cbXMLDefinition($sMatch, $iPosBefore, $iPos - $iPosBefore)
 
-			If IsKeyword($cbCDATA) <> 1 Then $cbCDATA($sMatch, $iPosBefore, $iPos - $iPosBefore)
+					; Elements which should not be parsed (CDATA)
+				ElseIf __matchAndBool($sMatch, $sXML, $sRE & '\G(?P>NonParsingElement)', $iPos) Then
+					$iPosBefore = $iPos
+					$iPos = @extended
 
-		; element start
-		ElseIf __matchAndBool($sMatch, $sXML, $sRE & '\G(?P>ElementBegin)', $iPos) Then
-			$iPosBefore = $iPos
-			$iPos = @extended
-			Local $mAttributes[]
+					If IsKeyword($cbCDATA) <> 1 Then $cbCDATA($sMatch, $iPosBefore, $iPos - $iPosBefore)
 
-			__matchAndBool($sElName, $sMatch, $sRE & '\A\<\K(?P>Name)')
-			If @error Then Return SetError(1, $iPos, False)
+					; Elements which should be handled special like script and style elements
+				EndIf
+			Else
+				If __matchAndBool($sMatch, $sXML, $sRE & '\G(?P>ScriptElement)', $iPos) Then
+					$iPosBefore = $iPos
+					$iPos = @extended
 
-			$aAttributes = StringRegExp(StringTrimLeft($sMatch, StringLen($sElName) + 1), $sRE & '(?P>WS)*\K(?P>AttPlusValue)', 3)
-			If Not @error Then
-				For $sAttrib In $aAttributes
-					$aSplit = StringSplit($sAttrib, "=", 3)
-					$mAttributes[__remQuote($aSplit[0])] = UBound($aSplit) > 1 ? __remQuote($aSplit[1]) : ""
-				Next
+					If IsKeyword($cbSpecial) <> 1 Then $cbSpecial($sMatch, $iPosBefore, $iPos - $iPosBefore)
+
+					; element start
+				ElseIf __matchAndBool($sMatch, $sXML, $sRE & '\G(?P>ElementBegin)', $iPos) Then
+					$iPosBefore = $iPos
+					$iPos = @extended
+					Local $mAttributes[]
+
+					__matchAndBool($sElName, $sMatch, $sRE & '\A\<\K(?P>Name)')
+					If @error Then Return SetError(1, $iPos, False)
+
+					$aAttributes = StringRegExp(StringTrimLeft($sMatch, StringLen($sElName) + 1), $sRE & '(?P>WS)*\K(?P>AttPlusValue)', 3)
+					If Not @error Then
+						For $sAttrib In $aAttributes
+							$aSplit = StringSplit($sAttrib, "=", 3)
+							$mAttributes[__remQuote($aSplit[0])] = UBound($aSplit) > 1 ? __remQuote($aSplit[1]) : ""
+						Next
+					EndIf
+					If IsKeyword($cbStartElement) <> 1 Then $cbStartElement($sElName, $mAttributes, $iPosBefore, $iPos - $iPosBefore, StringRight($sMatch, 2) == "/>")
+
+					; element closing
+				ElseIf __matchAndBool($sMatch, $sXML, $sRE & '\G(?P>ElementEnd)', $iPos) Then
+					$iPosBefore = $iPos
+					$iPos = @extended
+
+					__matchAndBool($sElName, $sMatch, $sRE & '\A\<\/\K(?P>Name)')
+					If @error Then Return SetError(2, $iPos, False)
+
+					If IsKeyword($cbEndElement) <> 1 Then $cbEndElement($sElName, $iPosBefore, $iPos - $iPosBefore)
+				EndIf
 			EndIf
-			If IsKeyword($cbStartElement) <> 1 Then $cbStartElement($sElName, $mAttributes, $iPosBefore, $iPos - $iPosBefore, StringRight($sMatch, 2) == "/>")
-
-		; element closing
-		ElseIf __matchAndBool($sMatch, $sXML, $sRE & '\G(?P>ElementEnd)', $iPos) Then
-			$iPosBefore = $iPos
-			$iPos = @extended
-
-			__matchAndBool($sElName, $sMatch, $sRE & '\A\<\/\K(?P>Name)')
-			If @error Then Return SetError(2, $iPos, False)
-
-			If IsKeyword($cbEndElement) <> 1 Then $cbEndElement($sElName, $iPosBefore, $iPos - $iPosBefore)
-
-		; element content
-		ElseIf __matchAndBool($sMatch, $sXML, $sRE & '\G[^<]++', $iPos) Then
+			; element content
+		ElseIf __matchAndBool($sMatch, $sXML, $sRE & '\G[^<]+', $iPos) Then
 			$iPosBefore = $iPos
 			$iPos = @extended
 
 			If Not BitAND($dFlags, StringIsSpace($sMatch)) And IsKeyword($cbCharacters) <> 1 Then $cbCharacters($sMatch, $iPosBefore, $iPos - $iPosBefore)
 
-		; should normally only match the document end
+			; should normally only match the document end
 		Else
 			$iPos += 1
 
 			Return $iPos > $iXMLLength ? True : SetError(3, $iPos, False)
 		EndIf
-
 	Until 0
 EndFunc   ;==>_xml_SAXParse
 
@@ -145,7 +159,7 @@ EndFunc   ;==>_xml_SAXParse
 ; =================================================================================================
 Func __remQuote($sString)
 	Return StringRegExpReplace($sString, '(^\h*["'']|["'']\h*$)', "", 2)
-EndFunc
+EndFunc   ;==>__remQuote
 
 ; #FUNCTION# ======================================================================================
 ; Name ..........: __matchAndBool()
@@ -160,7 +174,7 @@ EndFunc
 ; Author ........: AspirinJunkie
 ; Remarks .......: internal helper function only
 ; =================================================================================================
-Func __matchAndBool(ByRef $o_Tmp, Const ByRef $s_String, Const $s_Pattern, $i_Os = 1)
+Func __matchAndBool(ByRef $o_Tmp, ByRef $s_String, Const $s_Pattern, $i_Os = 1)
 	Local $a_Return = StringRegExp($s_String, $s_Pattern, 1, $i_Os)
 	If @error Then Return SetError(1, $i_Os, False)
 	$o_Tmp = $a_Return[0]

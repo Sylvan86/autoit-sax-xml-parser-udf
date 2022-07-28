@@ -3,13 +3,13 @@
 ; global user-defined variables to communicate between the callback functions and implement a common process structure
 Global $_sax_mBookList[], $_sax_mBook, $_sax_bBook = False, $_sax_CurrentAttribute
 
-
-
-; read the xml file
+; read the xml file (example job here: create list of book-objects out of the xml file)
 Local $sXMLData = FileRead("Test.xml")
 
+$iT = TimerInit()
 ; parse the xml-file
-_xml_SAXParse($sXMLData, __elementsStart, __elementsEnd, __contentOccurs)
+_xml_SAXParse($sXMLData, 3, __elementsStart, __elementsEnd, __contentOccurs)
+ConsoleWrite(TimerDiff($iT) & @CRLF)
 
 ; process the result:
 For $mBook In $_sax_mBookList
