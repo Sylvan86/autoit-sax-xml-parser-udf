@@ -6,18 +6,16 @@ Global $_sax_mBookList[], $_sax_mBook, $_sax_bBook = False, $_sax_CurrentAttribu
 ; read the xml file (example job here: create list of book-objects out of the xml file)
 Local $sXMLData = FileRead("Test.xml")
 
-$iT = TimerInit()
 ; parse the xml-file
 _xml_SAXParse($sXMLData, 3, __elementsStart, __elementsEnd, __contentOccurs)
-ConsoleWrite(TimerDiff($iT) & @CRLF)
 
 ; process the result:
 For $mBook In $_sax_mBookList
-	ConsoleWrite(@CRLF & "-------------------------------------" & @CRLF)
+	ConsoleWrite(@CRLF & "------------------------------------------------------------------" & @CRLF)
 	For $sAttribute In MapKeys($mBook)
-		ConsoleWrite(StringFormat("% 13s: %s\n", $sAttribute, StringStripCR(StringStripWS($mBook[$sAttribute], 4))))
+		ConsoleWrite(StringFormat("% 13s: %s\n", $sAttribute, StringStripWS(StringReplace(StringStripCR($mBook[$sAttribute]), @LF, "", 0, 1), 7)))
 	Next
-	ConsoleWrite("=====================================" & @CRLF)
+	ConsoleWrite("==================================================================" & @CRLF)
 Next
 
 
@@ -38,7 +36,7 @@ EndFunc
 ; is called when an XML element is closed
 Func __elementsEnd($sElementName, $iStart, $iLen)
 	If $sElementName = "book" Then	; a book object is finished
-		; add current book map to result list
+		; add current book-map to result list
 		MapAppend($_sax_mBookList, $_sax_mBook)
 		$_sax_bBook = False
 	EndIf
